@@ -1,0 +1,55 @@
+.env
+.env.*
+!.env.example
+
+# Local agent/client state and generated instructions
+**/.claude/
+**/.codex/
+**/.agent/
+**/.agents/
+**/.antigravity/
+**/.cursor/
+**/.windsurf/
+**/.mcp/
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+out/
+coverage/
+.nyc_output/
+.cache/
+.parcel-cache/
+.vite/
+.turbo/
+
+# Local automation/runtime state
+plans/
+runs/
+data/
+cms/
+tmp/
+temp/
+*.pid
+*.seed
+
+# Logs, reports, screenshots, and local exports
+*.log
+*.log.*
+*.trace
+*.har
+screenshots/
+reports/
+*.zip
+*.tar
+*.tar.gz
+
+# Editor and operating-system noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+*.orig
