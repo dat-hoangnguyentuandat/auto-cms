@@ -5,6 +5,7 @@ import type { AppConfig } from './config.js';
 import type { RunState } from './contracts.js';
 import { checkThemeStatic } from './theme-static-check.js';
 import { writeJsonAtomic } from './utils.js';
+import { writeQaGate } from './qa-gate.js';
 
 type Finding = { severity: 'Critical' | 'High' | 'Medium' | 'Low'; title: string; details?: unknown };
 const viewports = [
@@ -33,6 +34,7 @@ function htmlText(html: string) {
 function occurrences(html: string, expression: RegExp) { return [...html.matchAll(expression)]; }
 
 export async function runQa(config: AppConfig, run: RunState, baseUrlValue: string) {
+  const startedAt = Date.now();
   if (!run.slug) throw new Error('Run has no theme slug');
   const baseUrl = new URL(baseUrlValue).href.replace(/\/$/, '');
   const publicUrl = (route: string) => new URL(route.replace(/^\//, ''), `${baseUrl}/`);
@@ -55,6 +57,8 @@ export async function runQa(config: AppConfig, run: RunState, baseUrlValue: stri
     { name: 'unversioned filemtime asset', pattern: /filemtime\s*\(/i },
     { name: 'default paginator', pattern: /->links\s*\(\s*\)/i },
     { name: 'hardcoded sell route', pattern: /route\s*\(\s*["']sell\./i },
+    { name: 'adjacent Blade closing directives', pattern: /@(endif|endforeach|endforelse)@endsection/i },
+    { name: 'theme-owned language switcher', pattern: /fullUrlWithQuery\s*\(\s*\[\s*["']lang["']/i },
   ];
   const staticViolations: Array<{ file: string; rule: string }> = [];
   for (const file of sourceFiles.filter((item) => /\.(php|blade\.php|css|js|json)$/i.test(item))) {
@@ -66,31 +70,32 @@ export async function runQa(config: AppConfig, run: RunState, baseUrlValue: stri
   await writeJsonAtomic(staticEvidence, { ...staticResult, scannedFiles: sourceFiles.length, violations: staticViolations });
 
   const httpPages: unknown[] = []; const internalLinks: unknown[] = []; const discovered = new Set<string>();
-  for (const route of routes) {
+  await Promise.all(routes.map(async (route) => {
     const response = await fetch(publicUrl(route)); const html = await response.text();
     const title = html.match(/<title>([\s\S]*?)<\/title>/i)?.[1]?.trim() || '';
     const description = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)/i)?.[1] || '';
     const canonical = html.match(/<link\s+rel=["']canonical["']\s+href=["']([^"']*)/i)?.[1] || '';
     const anchors = occurrences(html, /<a\b[^>]*href=["']([^"']+)/gi).map((item) => item[1]);
     anchors.forEach((href) => discovered.add(href));
-    const page = { route, status: response.status, title, description, canonical, h1Count: occurrences(html, /<h1\b/gi).length, viewport: /<meta\s+name=["']viewport/i.test(html), lang: html.match(/<html\b[^>]*lang=["']([^"']+)/i)?.[1] || '', jsonLd: occurrences(html, /type=["']application\/ld\+json["']/gi).length, wordCount: htmlText(html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || '').split(/\s+/).filter(Boolean).length };
+    const page = { route, status: response.status, title, description, canonical, h1Count: occurrences(html, /<h1\b/gi).length, viewport: /<meta\s+name=["']viewport/i.test(html), lang: html.match(/<html\b[^>]*lang=["']([^"']+)/i)?.[1] || '', jsonLd: occurrences(html, /type=["']application\/ld\+json["']/gi).length, wordCount: htmlText(html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || '').split(/\s+/).filter(Boolean).length, rawBladeDirective: /@(endsection|section|endif|endforeach|endforelse)\b/i.test(htmlText(html)) };
     httpPages.push(page);
     if (response.status !== 200 || page.h1Count !== 1 || !canonical || !page.viewport || !page.lang) findings.push({ severity: 'High', title: `Rendered contract failed: ${route}`, details: page });
     if (!title || !description) findings.push({ severity: 'High', title: `Missing metadata: ${route}` });
+    if (page.rawBladeDirective) findings.push({ severity: 'Critical', title: `Raw Blade directive rendered: ${route}` });
     if (page.wordCount < 100) findings.push({ severity: 'Medium', title: `Thin rendered content: ${route}`, details: { wordCount: page.wordCount } });
-  }
-  for (const href of discovered) {
-    if (/^(#|tel:|mailto:|javascript:)/i.test(href)) continue;
-    const target = new URL(href, `${baseUrl}/`); if (target.origin !== new URL(baseUrl).origin) continue;
+  }));
+  await Promise.all([...discovered].map(async (href) => {
+    if (/^(#|tel:|mailto:|javascript:)/i.test(href)) return;
+    const target = new URL(href, `${baseUrl}/`); if (target.origin !== new URL(baseUrl).origin) return;
     const response = await fetch(target, { redirect: 'manual' });
     internalLinks.push({ href, resolved: target.href, status: response.status });
     if (response.status >= 400) findings.push({ severity: 'High', title: `Broken internal link: ${href}`, details: { status: response.status } });
-  }
-  for (const endpoint of ['/robots.txt', '/sitemap.xml']) {
+  }));
+  await Promise.all(['/robots.txt', '/sitemap.xml'].map(async (endpoint) => {
     const response = await fetch(publicUrl(endpoint));
     if (endpoint === '/robots.txt' && response.status !== 200) findings.push({ severity: 'High', title: 'robots.txt unavailable' });
     if (endpoint === '/sitemap.xml' && response.status !== 200) findings.push({ severity: 'Medium', title: 'sitemap.xml unavailable' });
-  }
+  }));
   const httpEvidence = path.join(outputDir, 'automated-http-seo.json');
   await writeJsonAtomic(httpEvidence, { baseUrl, pages: httpPages, internalLinks, findings });
 
@@ -103,20 +108,21 @@ export async function runQa(config: AppConfig, run: RunState, baseUrlValue: stri
     page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     const settleLazyMedia = async () => page.evaluate(async () => {
       const images = [...document.images];
-      for (const image of images) {
-        image.scrollIntoView({ block: 'center' }); await new Promise((resolve) => setTimeout(resolve, 80));
-      }
+      images.forEach((image) => { image.loading = 'eager'; });
+      window.scrollTo(0, document.documentElement.scrollHeight);
       await Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
-        const done = () => resolve(); image.addEventListener('load', done, { once: true }); image.addEventListener('error', done, { once: true }); setTimeout(done, 3000);
+        const done = () => resolve(); image.addEventListener('load', done, { once: true }); image.addEventListener('error', done, { once: true }); setTimeout(done, 1500);
       })));
-      window.scrollTo(0, 0); await new Promise((resolve) => setTimeout(resolve, 250));
+      window.scrollTo(0, 0); await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     });
     for (const viewport of viewports) {
       await page.setViewport({ width: viewport.width, height: viewport.height });
-      const response = await page.goto(publicUrl('/').href, { waitUntil: 'networkidle2', timeout: 30000 });
+      const response = await page.goto(publicUrl('/').href, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await settleLazyMedia();
       const metrics = await page.evaluate(() => {
         const hero = document.querySelector('[data-hero-layout="full-bleed"]'); const heroRect = hero?.getBoundingClientRect();
+        const header = document.querySelector('header'); const main = document.querySelector('main'); const footer = document.querySelector('footer');
+        const cart = document.querySelector('.cms-sell-cart-link'); const switchers = document.querySelectorAll('[data-cms-injection="theme-i18n-switcher-header"]');
         return {
           overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
           brokenImages: [...document.images].filter((image) => !image.complete || image.naturalWidth === 0).map((image) => image.src),
@@ -124,25 +130,39 @@ export async function runQa(config: AppConfig, run: RunState, baseUrlValue: stri
           footerCount: document.querySelectorAll('.site-footer').length || document.querySelectorAll('body > footer').length,
           newsInPrimaryNav: [...document.querySelectorAll('nav a')].some((anchor) => new URL((anchor as HTMLAnchorElement).href).pathname.replace(/\/$/, '').endsWith('/tin-tuc')),
           fullBleedHero: Boolean(heroRect && heroRect.width >= window.innerWidth - 2 && hero?.querySelector('img')),
+          rawBladeDirective: /@(endsection|section|endif|endforeach|endforelse)\b/i.test(document.body.innerText),
+          structureOrder: Boolean(header && main && footer && (header.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING) && (main.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          languageSwitcherCount: switchers.length,
+          cartCount: document.querySelectorAll('.cms-sell-cart-link').length,
+          cartInPrimaryNav: Boolean(cart && document.querySelector('header nav')?.contains(cart)),
+          favicon: Boolean(document.querySelector('link[rel="icon"]')),
         };
       });
-      const screenshot = path.join(outputDir, `automated-home-${viewport.name}.png`); await page.screenshot({ path: screenshot, fullPage: true }); screenshotEvidence.push(screenshot);
+      if (['1440', '390'].includes(viewport.name)) { const screenshot = path.join(outputDir, `automated-home-${viewport.name}.png`); await page.screenshot({ path: screenshot, fullPage: true }); screenshotEvidence.push(screenshot); }
       browserResults.push({ route: '/', viewport: viewport.name, status: response?.status(), ...metrics });
-      if (response?.status() !== 200 || metrics.overflow || metrics.brokenImages.length || metrics.headerCount !== 1 || metrics.footerCount !== 1 || !metrics.newsInPrimaryNav || !metrics.fullBleedHero) findings.push({ severity: 'High', title: `Responsive browser contract failed at ${viewport.name}px`, details: metrics });
+      if (metrics.rawBladeDirective) findings.push({ severity: 'Critical', title: `Raw Blade directive in browser at ${viewport.name}px`, details: metrics });
+      if (response?.status() !== 200 || metrics.overflow || metrics.brokenImages.length || metrics.headerCount !== 1 || metrics.footerCount !== 1 || !metrics.newsInPrimaryNav || !metrics.fullBleedHero || !metrics.structureOrder || metrics.languageSwitcherCount > 1 || metrics.cartCount > 1 || metrics.cartInPrimaryNav || !metrics.favicon) findings.push({ severity: 'High', title: `Responsive browser contract failed at ${viewport.name}px`, details: metrics });
     }
+    const mobileRouteRepresentatives = new Set(['/san-pham', '/tin-tuc', '/lien-he', '/gioi-thieu']);
+    const mobilePathsCovered = new Set<string>();
     for (const route of routes.filter((item) => item !== '/')) {
-      for (const viewport of [viewports[0], viewports[3]]) {
-        await page.setViewport({ width: viewport.width, height: viewport.height }); const response = await page.goto(publicUrl(route).href, { waitUntil: 'networkidle2', timeout: 30000 });
+      const routePath = new URL(route, `${baseUrl}/`).pathname;
+      const needsMobile = mobileRouteRepresentatives.has(routePath) && !mobilePathsCovered.has(routePath);
+      if (needsMobile) mobilePathsCovered.add(routePath);
+      const routeViewports = needsMobile ? [viewports[0], viewports[3]] : [viewports[0]];
+      for (const viewport of routeViewports) {
+        await page.setViewport({ width: viewport.width, height: viewport.height }); const response = await page.goto(publicUrl(route).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await settleLazyMedia();
         const metrics = await page.evaluate((currentRoute) => {
           const selector = currentRoute === '/dich-vu' ? '.service-card' : currentRoute === '/tin-tuc' ? '.news-card' : null;
           const cards = selector ? [...document.querySelectorAll(selector)] : [];
-          return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, brokenImages: [...document.images].filter((image) => !image.complete || image.naturalWidth === 0).map((image) => image.src), cardCount: cards.length, cardImageCount: cards.filter((card) => card.querySelector('img')).length };
+          const header = document.querySelector('header'); const main = document.querySelector('main'); const footer = document.querySelector('footer');
+          return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1, brokenImages: [...document.images].filter((image) => !image.complete || image.naturalWidth === 0).map((image) => image.src), cardCount: cards.length, cardImageCount: cards.filter((card) => card.querySelector('img')).length, rawBladeDirective: /@(endsection|section|endif|endforeach|endforelse)\b/i.test(document.body.innerText), structureOrder: Boolean(header && main && footer && (header.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING) && (main.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING)) };
         }, route);
-        const screenshot = path.join(outputDir, `automated-${route.replace(/^\//, '').replace(/[^a-z0-9]+/gi, '-') || 'home'}-${viewport.name}.png`); await page.screenshot({ path: screenshot, fullPage: true }); screenshotEvidence.push(screenshot);
         browserResults.push({ route, viewport: viewport.name, status: response?.status(), ...metrics });
         const incompleteListing = ['/dich-vu', '/tin-tuc'].includes(route) && (metrics.cardCount < 3 || metrics.cardImageCount !== metrics.cardCount);
-        if (response?.status() !== 200 || metrics.overflow || metrics.brokenImages.length || incompleteListing) findings.push({ severity: 'High', title: `Route visual/content contract failed: ${route} at ${viewport.name}px`, details: metrics });
+        const failed = response?.status() !== 200 || metrics.overflow || metrics.brokenImages.length || incompleteListing || metrics.rawBladeDirective || !metrics.structureOrder;
+        if (failed) { const screenshot = path.join(outputDir, `failed-${route.replace(/^\//, '').replace(/[^a-z0-9]+/gi, '-') || 'home'}-${viewport.name}.png`); await page.screenshot({ path: screenshot, fullPage: true }); screenshotEvidence.push(screenshot); findings.push({ severity: metrics.rawBladeDirective ? 'Critical' : 'High', title: `Route visual/content contract failed: ${route} at ${viewport.name}px`, details: metrics }); }
       }
     }
     if (consoleErrors.length) findings.push({ severity: 'High', title: 'Browser console errors', details: consoleErrors });
@@ -156,15 +176,19 @@ export async function runQa(config: AppConfig, run: RunState, baseUrlValue: stri
   if (/review|testimonial/.test(serialized)) pending.push('broken/slow avatar and very-long review fixture with cleanup');
   const critical = findings.filter((item) => item.severity === 'Critical').length;
   const high = findings.filter((item) => item.severity === 'High').length;
+  const deterministicEvidence = [staticEvidence, httpEvidence, browserEvidence, ...screenshotEvidence];
+  const gateFile = path.join(outputDir, 'qa-gate.json');
+  const gate = await writeQaGate(gateFile, { runId: run.runId, slug: run.slug, passed: critical === 0 && high === 0, critical, high, durationMs: Date.now() - startedAt, themePath, evidenceFiles: deterministicEvidence });
   const draft = {
     passed: false, critical, high,
     checks: [
       { name: 'automated-static', passed: !staticViolations.length, details: staticResult },
       { name: 'automated-http-seo-links', passed: !findings.some((item) => item.severity === 'High' && /Rendered|metadata|link|robots/.test(item.title)), details: `${routes.length} sitemap routes and ${internalLinks.length} internal links audited` },
-      { name: 'automated-responsive-browser', passed: !findings.some((item) => item.severity === 'High' && /browser|Responsive|Mobile/.test(item.title)), details: `${viewports.length} home viewports plus ${Math.max(0, routes.length - 1)} mobile routes` },
+      { name: 'automated-responsive-browser', passed: !findings.some((item) => ['Critical', 'High'].includes(item.severity) && /browser|Responsive|Mobile|Blade|visual/.test(item.title)), details: `${browserResults.length} route/viewport checks with ${screenshotEvidence.length} representative or failure screenshots` },
     ],
     findings, pending,
-    evidence: [staticEvidence, httpEvidence, browserEvidence, ...screenshotEvidence],
+    durationMs: gate.durationMs,
+    evidence: [...deterministicEvidence, gateFile],
     note: 'Draft only. Complete pending mutable-data fixtures, merge their evidence, then set passed=true only when critical=0 and high=0.',
   };
   const draftFile = path.join(outputDir, 'qa-draft.json'); await writeJsonAtomic(draftFile, draft);

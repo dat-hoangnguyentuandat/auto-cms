@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { assertInside } from './utils.js';
+import { validateQaGate, type QaGate } from './qa-gate.js';
 
 const sitemapSubmission = z.object({ slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/), sitemapPath: z.string() });
 const designSubmission = z.object({
@@ -58,8 +59,14 @@ export async function validateThemeSubmission(file: string, cmsRoot: string, exp
   return data;
 }
 
-export async function validateQaSubmission(file: string, allowedEvidenceRoot: string) {
+export async function validateQaSubmission(file: string, allowedEvidenceRoot: string, expectedThemePath: string) {
   const data = qaSubmission.parse(await readJson(file));
   for (const evidence of data.evidence) { assertInside(allowedEvidenceRoot, evidence); await fs.access(path.resolve(evidence)); }
+  const gateFile = path.join(allowedEvidenceRoot, 'reports', 'qa', 'qa-gate.json');
+  if (!data.evidence.some((item) => path.resolve(item) === path.resolve(gateFile))) throw new Error('QA report must include deterministic qa-gate.json evidence');
+  const gate = await validateQaGate(await readJson(gateFile) as QaGate, expectedThemePath);
+  const submitted = new Set(data.evidence.map((item) => path.resolve(item)));
+  const missing = gate.evidence.filter((item) => !submitted.has(path.resolve(item.path)));
+  if (missing.length) throw new Error(`QA report omitted deterministic evidence: ${missing.map((item) => item.path).join(', ')}`);
   return data;
 }

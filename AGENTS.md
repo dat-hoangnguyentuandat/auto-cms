@@ -70,7 +70,7 @@ BasedKit support files are stored under `.codex/basedkit`.
 - Prioritize functionality and readability over strict style enforcement and code formatting
 - Use reasonable code quality standards that enhance developer productivity
 - Use try catch error handling & cover security standards
-- Use `code-reviewer` for medium/large, security-sensitive, architectural, or explicitly requested reviews. Do not invoke it for trivial changes unless risk warrants it.
+- Use `code-reviewer` agent to review code after every implementation
 
 ## Pre-commit/Push Rules
 - Run linting before commit
@@ -91,42 +91,9 @@ BasedKit support files are stored under `.codex/basedkit`.
 **IMPORTANT:** Analyze the skills catalog and activate the skills that are needed for the task during the process.
 **IMPORTANT**: Ensure token efficiency while maintaining high quality.
 
-## Task Sizing And Fast Path
-
-Classify the task before choosing a workflow. Prefer the smallest workflow that safely completes the request.
-
-### Small / Fast-path tasks
-
-Examples: copy changes, CSS alignment or spacing, changing a display limit, a localized template adjustment, renaming a label, a one-file configuration change, or another obvious low-risk edit.
-
-- Work directly without delegating to `planner`, `researcher`, `tester`, `code-reviewer`, `docs-manager`, or `project-manager`.
-- Do not create a plan under `./plans`.
-- Inspect only the directly relevant files and skill references; do not load an entire documentation set when the selected skill allows phase-specific reading.
-- Make the smallest scoped edit.
-- Run the fastest relevant validation: syntax/compile check, focused test, rendered/static check, and asset publish/cache clear only when required.
-- Do not run the full test suite, package the whole theme, update roadmap/changelog, or perform broad QA unless the change affects those areas or the user asks.
-- Target completion in one direct implementation pass. Escalate to the standard workflow only if the task expands, validation fails, or hidden complexity appears.
-
-### Medium tasks
-
-Examples: a multi-file bug fix, an isolated feature, a component refactor, or a change to an API/data contract.
-
-- Use a concise local plan; delegate to `planner` only when dependencies or design choices are non-trivial.
-- Run focused tests directly or use `tester` when test analysis is substantial.
-- Use `code-reviewer` when the change affects shared behavior, security, data integrity, or backward compatibility.
-- Update documentation only when behavior, contracts, operations, or project status materially changes.
-
-### Large / High-risk tasks
-
-Examples: new subsystems, cross-cutting features, architecture changes, migrations, authentication/payment work, production incidents, ERP-to-theme runs, or changes spanning several modules.
-
-- Follow the full Planning → Implementation → Testing → Review workflow.
-- Use research, documentation, project management, and parallel agents only where they add concrete value.
-- ERP task URL runs always follow the complete Auto CMS protocol and are never eligible for the fast path.
-
 #### 1. Code Implementation
-- For large/high-risk work, delegate to `planner` to create an implementation plan with TODO tasks in `./plans`.
-- Use researcher agents only for distinct unknowns that require external or deep technical research; do not use them for familiar or localized work.
+- Before you start, delegate to `planner` agent to create a implementation plan with TODO tasks in `./plans` directory.
+- When in planning phase, use multiple `researcher` agents in parallel to conduct research on different relevant technical topics and report back to `planner` agent to create implementation plan.
 - Write clean, readable, and maintainable code
 - Follow established architectural patterns
 - Implement features according to specifications
@@ -135,35 +102,34 @@ Examples: new subsystems, cross-cutting features, architecture changes, migratio
 - **[IMPORTANT]** After creating or modifying code file, run compile command/script to check for any compile errors.
 
 #### 2. Testing
-- For large/high-risk work, delegate to `tester` to run tests and analyze the summary report. For small/medium work, run the narrowest relevant validation directly.
-  The following comprehensive expectations apply when the task introduces or materially changes behavior:
+- Delegate to `tester` agent to run tests and analyze the summary report.
   - Write comprehensive unit tests
   - Ensure high code coverage
   - Test error scenarios
   - Validate performance requirements
 - Tests are critical for ensuring code quality and reliability, **DO NOT** ignore failing tests just to pass the build.
 - **IMPORTANT:** make sure you don't use fake data, mocks, cheats, tricks, temporary solutions, just to pass the build or github actions.
-- **IMPORTANT:** Always fix relevant failing tests and rerun the failed checks. Re-delegate to `tester` only when the task uses the full workflow or test analysis remains non-trivial.
+- **IMPORTANT:** Always fix failing tests follow the recommendations and delegate to `tester` agent to run tests again, only finish your session when all tests pass.
 
 #### 3. Code Quality
-- After large/high-risk implementations, delegate to `code-reviewer`. For small fast-path work, perform a direct scoped diff review.
+- After finish implementation, delegate to `code-reviewer` agent to review code.
 - Follow coding standards and conventions
 - Write self-documenting code
 - Add meaningful comments for complex logic
 - Optimize for performance and maintainability
 
 #### 4. Integration
-- Follow the approved plan when the task has one; fast-path tasks do not require a stored plan.
+- Always follow the plan given by `planner` agent
 - Ensure seamless integration with existing code
 - Follow API contracts precisely
 - Maintain backward compatibility
 - Document breaking changes
-- Delegate to `docs-manager` only for material documentation updates or broad documentation work.
+- Delegate to `docs-manager` agent to update docs in `./docs` directory if any.
 
 #### 5. Debugging
-- Delegate server, CI/CD, intermittent, production, or otherwise complex investigations to `debugger`. Diagnose small reproducible local issues directly.
+- When a user report bugs or issues on the server or a CI/CD pipeline, delegate to `debugger` agent to run tests and analyze the summary report.
 - Read the summary report from `debugger` agent and implement the fix.
-- Use `tester` for substantial regression validation; otherwise run focused tests directly.
+- Delegate to `tester` agent to run tests and analyze the summary report.
 - If the `tester` agent reports failed tests, fix them follow the recommendations and repeat from the **Step 2**.
 
 # Orchestration Protocol
@@ -192,8 +158,6 @@ Spawn multiple subagents simultaneously for independent tasks:
 - **Code Standards** (`./docs/code-standards.md`): Detailed record of all significant changes, features, and fixes
 
 ### Automatic Updates Required
-These automatic documentation updates apply only to material feature, milestone, bug, security, timeline, or scope changes. Small fast-path edits do not require roadmap/changelog updates.
-
 - **After Feature Implementation**: Update roadmap progress status and changelog entries
 - **After Major Milestones**: Review and adjust roadmap phases, update success metrics
 - **After Bug Fixes**: Document fixes in changelog with severity and impact
@@ -201,7 +165,7 @@ These automatic documentation updates apply only to material feature, milestone,
 - **Weekly Reviews**: Update progress percentages and milestone statuses
 
 ### Documentation Triggers
-For material project changes, the `project-manager` agent MUST update these documents when:
+The `project-manager` agent MUST update these documents when:
 - A development phase status changes (e.g., from "In Progress" to "Complete")
 - Major features are implemented or released
 - Significant bugs are resolved or security patches applied

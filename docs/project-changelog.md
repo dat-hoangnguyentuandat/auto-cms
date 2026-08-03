@@ -1,5 +1,22 @@
 # Project changelog
 
+## 2026-08-03
+
+### QA integrity and speed
+
+- Added a deterministic `qa-gate.json` with theme-source fingerprint and SHA-256 hashes for every automated evidence file.
+- QA submission now rejects missing gates, blocking findings, changed theme source, changed evidence, and omitted deterministic evidence.
+- Added runtime gates for raw Blade directives, DOM shell order, duplicate language/cart utilities, cart placement, favicon, broken images and overflow.
+- Parallelized HTTP route and internal-link checks; changed browser waits to DOM-ready plus parallel lazy-media settling.
+- Reduced screenshots to 1440/390 representatives plus failure-only captures while retaining six homepage breakpoints and representative route/mobile checks.
+- Benchmarked run 5105 at 26.68 seconds with zero Critical/High findings and five hashed evidence artifacts.
+
+### Theme skill
+
+- Added `theme-cms/scripts/check-theme-quality.mjs` and a deterministic quality checklist reference.
+- The checker catches adjacent Blade directives, theme-owned i18n controls, hardcoded sell routes, invalid contact fields, missing favicon/admin logo usage and malformed translation files.
+- Added regression coverage for the skill script, stale source fingerprints and tampered QA evidence.
+
 ## 2026-08-02
 
 ### Optimized

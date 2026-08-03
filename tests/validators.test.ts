@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validateDesignSubmission, validateQaSubmission } from '../src/validators.js';
+import { writeQaGate } from '../src/qa-gate.js';
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))));
@@ -18,16 +19,22 @@ describe('submission validators', () => {
   it('rejects empty QA evidence', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-cms-qa-')); roots.push(root); const file = path.join(root, 'qa.json');
     await fs.writeFile(file, JSON.stringify({ passed: true, critical: 0, high: 0, checks: [], evidence: [] }));
-    await expect(validateQaSubmission(file, root)).rejects.toThrow();
+    await expect(validateQaSubmission(file, root, path.join(root, 'theme'))).rejects.toThrow();
   });
   it('requires QA evidence files to exist', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-cms-qa-')); roots.push(root); const file = path.join(root, 'qa.json');
     await fs.writeFile(file, JSON.stringify({ passed: true, critical: 0, high: 0, checks: ['routes'], evidence: [path.join(root, 'missing.png')] }));
-    await expect(validateQaSubmission(file, root)).rejects.toThrow();
+    await expect(validateQaSubmission(file, root, path.join(root, 'theme'))).rejects.toThrow();
   });
   it('accepts QA evidence only inside the run root', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-cms-qa-')); roots.push(root); const evidence = path.join(root, 'report.txt'); const file = path.join(root, 'qa.json');
-    await fs.writeFile(evidence, 'real command output'); await fs.writeFile(file, JSON.stringify({ passed: true, critical: 0, high: 0, checks: ['routes'], evidence: [evidence] }));
-    await expect(validateQaSubmission(file, root)).resolves.toMatchObject({ passed: true });
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-cms-qa-')); roots.push(root); const evidence = path.join(root, 'reports', 'qa', 'report.txt'); const file = path.join(root, 'qa.json'); const theme = path.join(root, 'theme');
+    await fs.mkdir(path.dirname(evidence), { recursive: true }); await fs.mkdir(theme); await fs.writeFile(path.join(theme, 'theme.json'), '{}'); await fs.writeFile(evidence, 'real command output');
+    const gateFile = path.join(root, 'reports', 'qa', 'qa-gate.json'); await writeQaGate(gateFile, { runId: 'r1', slug: 'demo', passed: true, critical: 0, high: 0, durationMs: 1, themePath: theme, evidenceFiles: [evidence] });
+    await fs.writeFile(file, JSON.stringify({ passed: true, critical: 0, high: 0, checks: ['routes'], evidence: [evidence, gateFile] }));
+    await expect(validateQaSubmission(file, root, theme)).resolves.toMatchObject({ passed: true });
+    await fs.writeFile(path.join(theme, 'theme.json'), '{"changed":true}');
+    await expect(validateQaSubmission(file, root, theme)).rejects.toThrow('Theme changed');
+    await fs.writeFile(path.join(theme, 'theme.json'), '{}'); await fs.writeFile(evidence, 'tampered evidence');
+    await expect(validateQaSubmission(file, root, theme)).rejects.toThrow('evidence changed');
   });
 });

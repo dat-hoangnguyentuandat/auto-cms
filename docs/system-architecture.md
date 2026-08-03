@@ -13,8 +13,9 @@
 - Agent actions: prompt, skills, allowed roots, expected artifacts, submission token.
 - Focused runbooks: generated from sitemap capabilities so each action loads only applicable CMS references.
 - Stitch plan: foundation-first, concurrency-limited screen plan whose statuses survive resume.
-- QA runner: deterministic static, rendered HTTP/SEO/link and six-viewport browser evidence with an explicit mutable-fixture remainder.
-- Validators: sitemap contract, design coverage, theme structure/PHP syntax, QA evidence.
+- QA runner: deterministic static, parallel rendered HTTP/SEO/link checks, six-viewport browser metrics, representative/failure screenshots, and an explicit mutable-fixture remainder.
+- QA gate: fingerprints theme source and hashes deterministic evidence; any final source/evidence mutation invalidates submission.
+- Validators: sitemap contract, design coverage, theme structure/PHP syntax, and cross-checked deterministic QA evidence.
 - CMS adapter: Artisan theme packaging and ZIP audit.
 - Run lease: reserves the shared CMS from `THEME_QA` action creation through validated submission, surviving agent restarts.
 - Process lock: serializes package execution and rejects a live competing process.
@@ -27,7 +28,7 @@ ERP_READ → SITEMAP → STITCH_DESIGN → THEME_BUILD
          → THEME_QA → PACKAGE → FINAL_REPORT
 ```
 
-AI stages return `ACTION_REQUIRED`. The agent executes the focused prompt/runbook and submits a file. Invalid submissions keep the stage retryable and never advance silently. QA automation creates a draft only; upload, persistence, pagination and review fixtures remain required when sitemap capabilities call for them.
+AI stages return `ACTION_REQUIRED`. The agent executes the focused prompt/runbook and submits a file. Invalid submissions keep the stage retryable and never advance silently. QA automation creates an authoritative gate plus a draft; upload, persistence, pagination and review fixtures remain required when sitemap capabilities call for them. Manual fixture reports can extend but never override the deterministic gate.
 
 ## Source hierarchy
 

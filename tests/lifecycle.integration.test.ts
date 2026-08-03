@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Orchestrator } from '../src/orchestrator.js';
+import { writeQaGate } from '../src/qa-gate.js';
 import { RunStore } from '../src/run-store.js';
 import type { AgentAction, RunState, Stage } from '../src/contracts.js';
 
@@ -50,7 +51,8 @@ $base=__DIR__.DIRECTORY_SEPARATOR.'themes'.DIRECTORY_SEPARATOR.$slug;foreach(['t
     const themeSubmission = path.join(runDir, 'submissions', 'theme-build.json'); await json(themeSubmission, { slug, themePath: themeDir, compilePassed: true });
     current = await orchestrator.submit(runId, current.action!.submissionToken, themeSubmission); expect(current.stage).toBe('THEME_QA');
     const evidence = path.join(runDir, 'reports', 'qa', 'result.txt'); await fs.mkdir(path.dirname(evidence), { recursive: true }); await fs.writeFile(evidence, 'routes and responsive checks passed');
-    const qaSubmission = path.join(runDir, 'submissions', 'qa-report.json'); await json(qaSubmission, { passed: true, critical: 0, high: 0, checks: ['routes', 'responsive'], evidence: [evidence] });
+    const gateFile = path.join(runDir, 'reports', 'qa', 'qa-gate.json'); await writeQaGate(gateFile, { runId, slug: 'demo', passed: true, critical: 0, high: 0, durationMs: 1, themePath: themeDir, evidenceFiles: [evidence] });
+    const qaSubmission = path.join(runDir, 'submissions', 'qa-report.json'); await json(qaSubmission, { passed: true, critical: 0, high: 0, checks: ['routes', 'responsive'], evidence: [evidence, gateFile] });
     current = await orchestrator.submit(runId, current.action!.submissionToken, qaSubmission);
     expect(current.status).toBe('COMPLETED'); expect(current.artifacts.some((item) => item.kind === 'theme-package' && item.sha256)).toBe(true); expect(current.artifacts.some((item) => item.kind === 'final-report')).toBe(true);
     expect(current.metrics?.map((item) => item.stage)).toEqual(['SITEMAP', 'STITCH_DESIGN', 'THEME_BUILD', 'THEME_QA', 'PACKAGE', 'FINAL_REPORT']);

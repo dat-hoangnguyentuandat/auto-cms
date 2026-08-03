@@ -74,7 +74,7 @@ export class Orchestrator {
         const result = await validateDesignSubmission(resultFile, this.config.cmsRoot, run.slug!, expectedScreens); await completeStitchPlan(this.store.directory(run.runId), result); run.artifacts.push({ kind: 'design', path: result.designMd });
       }
       else if (stage === 'THEME_BUILD') { const result = await validateThemeSubmission(resultFile, this.config.cmsRoot, run.slug!); await checkThemeStatic(result.themePath); run.artifacts.push({ kind: 'theme-source', path: result.themePath }); }
-      else if (stage === 'THEME_QA') { await validateQaSubmission(resultFile, this.store.directory(run.runId)); await checkThemeStatic(path.join(this.config.cmsRoot, 'themes', run.slug!)); run.artifacts.push({ kind: 'qa-report', path: path.resolve(resultFile) }); await this.cmsLease.release(run.runId); }
+      else if (stage === 'THEME_QA') { await validateQaSubmission(resultFile, this.store.directory(run.runId), path.join(this.config.cmsRoot, 'themes', run.slug!)); await checkThemeStatic(path.join(this.config.cmsRoot, 'themes', run.slug!)); run.artifacts.push({ kind: 'qa-report', path: path.resolve(resultFile) }); await this.cmsLease.release(run.runId); }
       const completedAction = run.action; run.action = undefined; run.status = 'RUNNING'; return this.move(run, nextStage[stage]!, completedAction);
     } catch (error) { return this.failAttempt(run, error); }
   }
