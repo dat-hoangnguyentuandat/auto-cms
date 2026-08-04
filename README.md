@@ -5,7 +5,7 @@ Agent-neutral automation CMS theme package.
 ## Requirements
 
 - Node.js 22+, PHP 8.2+, Composer, MySQL.
-- CMS at `E:\Project\cms` unless `CMS_ROOT` overrides it.
+- CMS under this repository's `cms` directory unless `CMS_ROOT` overrides it. The default previously used `E:\Project\cms`; set an absolute `CMS_ROOT` to keep using an external CMS directory.
 - Edge running with CDP on `127.0.0.1:9222` tab open.
 - Stitch MCP connected in the host coding agent; see `mcp-setup.md`.
 

@@ -6,7 +6,7 @@ export type AppConfig = {
 
 export function loadConfig(): AppConfig {
   const projectRoot = path.resolve(import.meta.dirname, '..');
-  const cmsRoot = path.resolve(process.env.CMS_ROOT || 'E:/Project/cms');
+  const cmsRoot = path.resolve(process.env.CMS_ROOT || path.join(projectRoot, 'cms'));
   const maxRetries = Number(process.env.AUTO_CMS_MAX_RETRIES || 3);
   if (!Number.isInteger(maxRetries) || maxRetries < 1 || maxRetries > 10) throw new Error('AUTO_CMS_MAX_RETRIES must be 1..10');
   return {
@@ -14,4 +14,3 @@ export function loadConfig(): AppConfig {
     cdpUrl: process.env.EDGE_CDP_URL || 'http://127.0.0.1:9222', maxRetries,
   };
 }
-

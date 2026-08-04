@@ -1,5 +1,13 @@
 # Project changelog
 
+## 2026-08-04
+
+### CMS root portability
+
+- Changed the default CMS root from the machine-specific `E:\Project\cms` path to the repository-local `cms` directory.
+- Preserved explicit `CMS_ROOT` overrides and added regression coverage for missing, empty, relative, and working-directory-independent configuration behavior.
+- Documented migration for users who intentionally keep the CMS outside this repository.
+
 ## 2026-08-03
 
 ### QA integrity and speed
